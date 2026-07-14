@@ -1,4 +1,13 @@
 {
+  "tables": {
+    "businesses": "OMDmnoiYdMPmKNXK",
+    "services": "CeHwZiH8oZm5w2Xm",
+    "leads": "Wh0KbIpBHvunIqwK",
+    "reviews": "ZWIVEwVM63o9PBrW",
+    "logs": "531cgpCpPmkR8nWP"
+  },
+  "n8nBaseUrl": "https://n8n.fusionsync.ai",
+  "n8nApiKey": "your-n8n-api-key",
   "gmbApiKey": "gmb-dev-secret-change-me",
   "appUrl": "http://localhost:3000"
 }
