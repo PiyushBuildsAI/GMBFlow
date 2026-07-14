@@ -1,0 +1,125 @@
+{
+  "name": "GMB 02 — Send Review Email",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "trigger",
+      "name": "When called by API Gateway",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const seconds = Math.max(0, Number($json._send_delay_seconds) || 0);\nif (seconds > 0) {\n  await new Promise((resolve) => setTimeout(resolve, seconds * 1000));\n}\nreturn [{ json: $json }];"
+      },
+      "id": "rate-limit-wait",
+      "name": "Rate Limit Wait",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.body }}",
+        "options": { "appendAttribution": false }
+      },
+      "id": "gmail-send",
+      "name": "Send Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [440, 0],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const trigger = $('When called by API Gateway').first().json;\nreturn [{\n  json: {\n    action: 'lead.email_result',\n    lead_id: trigger.lead_id,\n    business_id: trigger.business_id,\n    success: true\n  }\n}];"
+      },
+      "id": "build-success",
+      "name": "Build Success Callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, -80]
+    },
+    {
+      "parameters": {
+        "jsCode": "const trigger = $('When called by API Gateway').first().json;\nconst errItem = $input.first().json;\nconst err = errItem.error;\nconst errMsg = typeof err === 'string'\n  ? err\n  : (err?.message || err?.description || errItem.message || 'Gmail send failed');\nreturn [{\n  json: {\n    action: 'lead.email_result',\n    lead_id: trigger.lead_id,\n    business_id: trigger.business_id,\n    success: false,\n    error: errMsg\n  }\n}];"
+      },
+      "id": "build-failed",
+      "name": "Build Failed Callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 120]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.fusionsync.ai/webhook/gmb-api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "X-API-Key", "value": "gmb-dev-secret-change-me" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "notify-success",
+      "name": "Notify Sent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [920, -80]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.fusionsync.ai/webhook/gmb-api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "X-API-Key", "value": "gmb-dev-secret-change-me" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "notify-failed",
+      "name": "Notify Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [920, 120]
+    }
+  ],
+  "connections": {
+    "When called by API Gateway": {
+      "main": [[{ "node": "Rate Limit Wait", "type": "main", "index": 0 }]]
+    },
+    "Rate Limit Wait": {
+      "main": [[{ "node": "Send Gmail", "type": "main", "index": 0 }]]
+    },
+    "Send Gmail": {
+      "main": [
+        [{ "node": "Build Success Callback", "type": "main", "index": 0 }],
+        [{ "node": "Build Failed Callback", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Success Callback": {
+      "main": [[{ "node": "Notify Sent", "type": "main", "index": 0 }]]
+    },
+    "Build Failed Callback": {
+      "main": [[{ "node": "Notify Failed", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" }
+}

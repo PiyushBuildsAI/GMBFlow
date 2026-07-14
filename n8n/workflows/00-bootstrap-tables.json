@@ -1,0 +1,381 @@
+{
+  "name": "GMB 00 — Bootstrap Data Tables",
+  "nodes": [
+    {
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "gmb-bootstrap-tables",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "gmb-bootstrap-tables"
+    },
+    {
+      "id": "create-gmb_businesses",
+      "name": "Create gmb_businesses",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "resource": "table",
+        "operation": "create",
+        "tableName": "gmb_businesses",
+        "columns": {
+          "column": [
+            {
+              "name": "slug",
+              "type": "string"
+            },
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "place_id",
+              "type": "string"
+            },
+            {
+              "name": "logo_url",
+              "type": "string"
+            },
+            {
+              "name": "owner_email",
+              "type": "string"
+            },
+            {
+              "name": "created_at",
+              "type": "string"
+            },
+            {
+              "name": "record_id",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "createIfNotExists": true
+        }
+      }
+    },
+    {
+      "id": "create-gmb_services",
+      "name": "Create gmb_services",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        460,
+        0
+      ],
+      "parameters": {
+        "resource": "table",
+        "operation": "create",
+        "tableName": "gmb_services",
+        "columns": {
+          "column": [
+            {
+              "name": "business_id",
+              "type": "string"
+            },
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "slug",
+              "type": "string"
+            },
+            {
+              "name": "email_subject",
+              "type": "string"
+            },
+            {
+              "name": "email_body",
+              "type": "string"
+            },
+            {
+              "name": "created_at",
+              "type": "string"
+            },
+            {
+              "name": "record_id",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "createIfNotExists": true
+        }
+      }
+    },
+    {
+      "id": "create-gmb_leads",
+      "name": "Create gmb_leads",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        680,
+        0
+      ],
+      "parameters": {
+        "resource": "table",
+        "operation": "create",
+        "tableName": "gmb_leads",
+        "columns": {
+          "column": [
+            {
+              "name": "business_id",
+              "type": "string"
+            },
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "email",
+              "type": "string"
+            },
+            {
+              "name": "service_id",
+              "type": "string"
+            },
+            {
+              "name": "status",
+              "type": "string"
+            },
+            {
+              "name": "review_token",
+              "type": "string"
+            },
+            {
+              "name": "notes",
+              "type": "string"
+            },
+            {
+              "name": "queued_at",
+              "type": "string"
+            },
+            {
+              "name": "sent_at",
+              "type": "string"
+            },
+            {
+              "name": "opened_at",
+              "type": "string"
+            },
+            {
+              "name": "reviewed_at",
+              "type": "string"
+            },
+            {
+              "name": "created_at",
+              "type": "string"
+            },
+            {
+              "name": "record_id",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "createIfNotExists": true
+        }
+      }
+    },
+    {
+      "id": "create-gmb_reviews",
+      "name": "Create gmb_reviews",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        900,
+        0
+      ],
+      "parameters": {
+        "resource": "table",
+        "operation": "create",
+        "tableName": "gmb_reviews",
+        "columns": {
+          "column": [
+            {
+              "name": "lead_id",
+              "type": "string"
+            },
+            {
+              "name": "business_id",
+              "type": "string"
+            },
+            {
+              "name": "rating",
+              "type": "number"
+            },
+            {
+              "name": "comment",
+              "type": "string"
+            },
+            {
+              "name": "redirected_to_gmb",
+              "type": "boolean"
+            },
+            {
+              "name": "created_at",
+              "type": "string"
+            },
+            {
+              "name": "record_id",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "createIfNotExists": true
+        }
+      }
+    },
+    {
+      "id": "create-gmb_activity_logs",
+      "name": "Create gmb_activity_logs",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        0
+      ],
+      "parameters": {
+        "resource": "table",
+        "operation": "create",
+        "tableName": "gmb_activity_logs",
+        "columns": {
+          "column": [
+            {
+              "name": "business_id",
+              "type": "string"
+            },
+            {
+              "name": "lead_id",
+              "type": "string"
+            },
+            {
+              "name": "event",
+              "type": "string"
+            },
+            {
+              "name": "detail",
+              "type": "string"
+            },
+            {
+              "name": "metadata",
+              "type": "string"
+            },
+            {
+              "name": "created_at",
+              "type": "string"
+            },
+            {
+              "name": "record_id",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "createIfNotExists": true
+        }
+      }
+    },
+    {
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1340,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { tables: $input.all().map(i => i.json) } }}"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Create gmb_businesses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create gmb_businesses": {
+      "main": [
+        [
+          {
+            "node": "Create gmb_services",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create gmb_services": {
+      "main": [
+        [
+          {
+            "node": "Create gmb_leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create gmb_leads": {
+      "main": [
+        [
+          {
+            "node": "Create gmb_reviews",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create gmb_reviews": {
+      "main": [
+        [
+          {
+            "node": "Create gmb_activity_logs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create gmb_activity_logs": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

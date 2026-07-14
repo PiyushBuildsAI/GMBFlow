@@ -32,6 +32,13 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# n8n local config (API keys, table IDs)
+n8n/gmb-config.json
+
+# cursor mcp (contains API keys)
+.cursor/mcp.json
 
 # vercel
 .vercel

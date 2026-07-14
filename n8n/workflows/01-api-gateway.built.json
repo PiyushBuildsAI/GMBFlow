@@ -1,0 +1,190 @@
+{
+  "name": "GMB 01 — API Gateway",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "gmb-api",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "gmb-api"
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * n8n Code node — Data Tables API Handler\n * CONFIG is injected at build time from n8n/gmb-config.json\n */\n\nconst CONFIG = {\"tables\":{\"businesses\":\"OMDmnoiYdMPmKNXK\",\"services\":\"CeHwZiH8oZm5w2Xm\",\"leads\":\"Wh0KbIpBHvunIqwK\",\"reviews\":\"ZWIVEwVM63o9PBrW\",\"logs\":\"531cgpCpPmkR8nWP\"},\"n8nBaseUrl\":\"https://n8n.fusionsync.ai\",\"n8nApiKey\":\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZjU1MTZlMi1kOGEwLTRlMTQtOTU2Mi1mNTVjZGNhMTdiNjQiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwianRpIjoiNzY5OGI5OGUtZmIwYS00YjgyLWE0OWYtYTFmMTVjNzNjNzczIiwiaWF0IjoxNzgzOTQ5NzY0fQ.NYU4iU1ltjaiZ9mdNvhogVXkiG5ex5KBF-bamr0U4OA\",\"gmbApiKey\":\"gmb-dev-secret-change-me\",\"appUrl\":\"http://localhost:3000\"};\n\nconst TABLES = {\n  businesses: CONFIG.tables.businesses,\n  services: CONFIG.tables.services,\n  leads: CONFIG.tables.leads,\n  reviews: CONFIG.tables.reviews,\n  logs: CONFIG.tables.logs,\n};\n\nconst API_KEY = CONFIG.n8nApiKey || '';\nconst BASE = (CONFIG.n8nBaseUrl || 'http://localhost:5678').replace(/\\/$/, '');\nconst APP_URL = (CONFIG.appUrl || 'http://localhost:3000').replace(/\\/$/, '');\n\nasync function httpRequest(options) {\n  if (typeof $helpers !== 'undefined' && $helpers.httpRequest) {\n    return $helpers.httpRequest(options);\n  }\n  if (typeof this !== 'undefined' && this.helpers && this.helpers.httpRequest) {\n    return this.helpers.httpRequest(options);\n  }\n\n  const method = options.method || 'GET';\n  const headers = { ...(options.headers || {}) };\n  let body;\n  if (options.body !== undefined) {\n    if (!headers['Content-Type'] && !headers['content-type']) {\n      headers['Content-Type'] = 'application/json';\n    }\n    body = typeof options.body === 'string' ? options.body : JSON.stringify(options.body);\n  }\n\n  const response = await fetch(options.url, { method, headers, body });\n  const text = await response.text();\n  if (!response.ok) {\n    throw new Error(`Request failed with status ${response.status}${text ? `: ${text}` : ''}`);\n  }\n  if (!text) return {};\n  try {\n    return JSON.parse(text);\n  } catch {\n    return text;\n  }\n}\n\nfunction normalizeRow(r) {\n  if (!r) return r;\n  const n8nId = r.id;\n  const recordId = r.record_id || '';\n  const { createdAt, updatedAt, ...rest } = r;\n  return {\n    ...rest,\n    _rowId: n8nId,\n    id: recordId || String(n8nId),\n  };\n}\n\nfunction toTableRow(row) {\n  const { _rowId, id, record_id, ...rest } = row;\n  return { ...rest, record_id: record_id || id };\n}\n\nasync function tableGetAll(tableId) {\n  if (!tableId) throw new Error('Data table ID not configured');\n  const all = [];\n  let cursor = null;\n\n  do {\n    const url = cursor\n      ? `${BASE}/api/v1/data-tables/${tableId}/rows?limit=250&cursor=${encodeURIComponent(cursor)}`\n      : `${BASE}/api/v1/data-tables/${tableId}/rows?limit=250`;\n    const res = await httpRequest({\n      method: 'GET',\n      url,\n      headers: { 'X-N8N-API-KEY': API_KEY, Accept: 'application/json' },\n      json: true,\n    });\n    const rows = res.data || [];\n    all.push(...rows.map(normalizeRow));\n    cursor = res.nextCursor || null;\n  } while (cursor);\n\n  return all;\n}\n\nasync function tableInsert(tableId, row) {\n  const tableRow = toTableRow(row);\n  const res = await httpRequest({\n    method: 'POST',\n    url: `${BASE}/api/v1/data-tables/${tableId}/rows`,\n    headers: { 'X-N8N-API-KEY': API_KEY, 'Content-Type': 'application/json', Accept: 'application/json' },\n    body: { data: [tableRow], returnType: 'all' },\n    json: true,\n  });\n  const rows = Array.isArray(res) ? res : (res.data || []);\n  const created = rows[0];\n  const normalized = normalizeRow(created);\n  if (normalized) return { data: normalized };\n  return {\n    data: normalizeRow({\n      ...tableRow,\n      record_id: tableRow.record_id || row.id,\n    }),\n  };\n}\n\nasync function tableUpdate(tableId, recordId, row) {\n  const payload = toTableRow(row);\n  delete payload.record_id;\n  await httpRequest({\n    method: 'PATCH',\n    url: `${BASE}/api/v1/data-tables/${tableId}/rows/update`,\n    headers: { 'X-N8N-API-KEY': API_KEY, 'Content-Type': 'application/json', Accept: 'application/json' },\n    body: {\n      filter: {\n        type: 'and',\n        filters: [{ columnName: 'record_id', condition: 'eq', value: recordId }],\n      },\n      data: payload,\n    },\n    json: true,\n  });\n}\n\nasync function tableBulkUpdateByFilter(tableId, filter, data) {\n  const res = await httpRequest({\n    method: 'PATCH',\n    url: `${BASE}/api/v1/data-tables/${tableId}/rows/update`,\n    headers: { 'X-N8N-API-KEY': API_KEY, 'Content-Type': 'application/json', Accept: 'application/json' },\n    body: { filter, data, returnData: true },\n    json: true,\n  });\n  const rows = Array.isArray(res) ? res : (res.data || []);\n  return rows.length;\n}\n\nasync function tableDelete(tableId, recordId) {\n  const filter = encodeURIComponent(\n    JSON.stringify({\n      type: 'and',\n      filters: [{ columnName: 'record_id', condition: 'eq', value: recordId }],\n    })\n  );\n  await httpRequest({\n    method: 'DELETE',\n    url: `${BASE}/api/v1/data-tables/${tableId}/rows/delete?filter=${filter}`,\n    headers: { 'X-N8N-API-KEY': API_KEY, Accept: 'application/json' },\n    json: true,\n  });\n}\n\nfunction uuid() {\n  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {\n    const r = (Math.random() * 16) | 0;\n    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);\n  });\n}\n\nfunction slugify(text) {\n  return String(text).toLowerCase().trim().replace(/[^\\w\\s-]/g, '').replace(/[\\s_]+/g, '-').replace(/^-+|-+$/g, '');\n}\n\nfunction replaceTemplate(text, vars) {\n  return String(text)\n    .replace(/\\{\\{name\\}\\}/g, vars.name || '')\n    .replace(/\\{\\{service\\}\\}/g, vars.service || '')\n    .replace(/\\{\\{review_link\\}\\}/g, vars.review_link || '');\n}\n\nfunction normalizeEmail(email) {\n  return String(email).trim().toLowerCase();\n}\n\nfunction paginateList(items, page, limit) {\n  const total = items.length;\n  const lim = Math.min(100, Math.max(1, Number(limit) || 25));\n  const pg = Math.max(1, Number(page) || 1);\n  const totalPages = Math.max(1, Math.ceil(total / lim) || 1);\n  const safePage = Math.min(pg, totalPages);\n  const start = (safePage - 1) * lim;\n  return {\n    items: items.slice(start, start + lim),\n    pagination: {\n      page: safePage,\n      limit: lim,\n      total,\n      total_pages: totalPages,\n    },\n  };\n}\n\nfunction buildGmbReviewUrl(placeId) {\n  return `https://search.google.com/local/writereview?placeid=${encodeURIComponent(placeId)}`;\n}\n\nfunction markdownToHtml(text) {\n  const trimmed = String(text).trim();\n  if (!trimmed) return '';\n  if (/<\\/?[a-z][\\s\\S]*>/i.test(trimmed)) return trimmed;\n  let html = trimmed\n    .replace(/&/g, '&amp;')\n    .replace(/</g, '&lt;')\n    .replace(/>/g, '&gt;');\n  html = html.replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>');\n  html = html.replace(/\\*(.+?)\\*/g, '<em>$1</em>');\n  html = html.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href=\"$2\">$1</a>');\n  return html\n    .split(/\\n\\n+/)\n    .map((p) => `<p>${p.replace(/\\n/g, '<br>')}</p>`)\n    .join('');\n}\n\nfunction emptyToNull(value) {\n  return value === '' || value === undefined ? null : value;\n}\n\nconst defaultServices = [\n  { name: 'Digital Marketing', subject: 'How was your marketing experience with us?', body: 'Hi {{name}},\\n\\nThank you for working with us on {{service}}. We would love your feedback:\\n\\n{{review_link}}\\n\\nThank you!' },\n  { name: 'Dev', subject: 'Share your experience with our development team', body: 'Hi {{name}},\\n\\nWe hope you enjoyed our {{service}} work. Please leave a quick review:\\n\\n{{review_link}}\\n\\nBest regards' },\n  { name: 'Design', subject: 'We value your feedback on our design work', body: 'Hi {{name}},\\n\\nYour opinion on our {{service}} matters. Leave a review here:\\n\\n{{review_link}}\\n\\nThanks!' },\n];\n\nconst input = $input.first().json;\nconst body = input.body ?? input;\nconst headers = input.headers ?? {};\n\nif ((CONFIG.gmbApiKey || '') && headers['x-api-key'] !== CONFIG.gmbApiKey && headers['X-API-Key'] !== CONFIG.gmbApiKey) {\n  return [{ json: { error: 'Unauthorized' } }];\n}\n\nconst { action, ...params } = body;\nconst now = new Date().toISOString();\n\nlet result = {};\nconst emailJobs = [];\n\nasync function migrateFromStaticIfNeeded(businesses, services, leads, reviews, logs) {\n  const staticData = $getWorkflowStaticData('global');\n  const store = staticData.store;\n  if (!store || staticData.migratedToTables) return;\n  if (businesses.length > 0) {\n    staticData.migratedToTables = true;\n    return;\n  }\n  if (!store.businesses?.length) return;\n\n  for (const b of store.businesses) {\n    const row = {\n      id: b.id,\n      slug: b.slug,\n      name: b.name,\n      place_id: b.place_id || '',\n      logo_url: b.logo_url || '',\n      owner_email: b.owner_email || '',\n      created_at: b.created_at || now,\n    };\n    const inserted = await tableInsert(TABLES.businesses, row);\n    businesses.push(inserted.data);\n  }\n  for (const s of store.services || []) {\n    const row = {\n      id: s.id,\n      business_id: s.business_id,\n      name: s.name,\n      slug: s.slug,\n      email_subject: s.email_subject,\n      email_body: s.email_body,\n      created_at: s.created_at || now,\n    };\n    const inserted = await tableInsert(TABLES.services, row);\n    services.push(inserted.data);\n  }\n  for (const l of store.leads || []) {\n    const row = {\n      id: l.id,\n      business_id: l.business_id,\n      name: l.name,\n      email: l.email,\n      service_id: l.service_id || '',\n      status: l.status,\n      review_token: l.review_token,\n      notes: l.notes || '',\n      queued_at: l.queued_at || '',\n      sent_at: l.sent_at || '',\n      opened_at: l.opened_at || '',\n      reviewed_at: l.reviewed_at || '',\n      created_at: l.created_at || now,\n    };\n    const inserted = await tableInsert(TABLES.leads, row);\n    leads.push(inserted.data);\n  }\n  for (const r of store.reviews || []) {\n    const row = {\n      id: r.id,\n      lead_id: r.lead_id,\n      business_id: r.business_id,\n      rating: r.rating,\n      comment: r.comment || '',\n      redirected_to_gmb: !!r.redirected_to_gmb,\n      created_at: r.created_at || now,\n    };\n    const inserted = await tableInsert(TABLES.reviews, row);\n    reviews.push(inserted.data);\n  }\n  for (const log of store.logs || []) {\n    const row = {\n      id: log.id,\n      business_id: log.business_id,\n      lead_id: log.lead_id || '',\n      event: log.event,\n      detail: log.detail,\n      metadata: log.metadata ? JSON.stringify(log.metadata) : '',\n      created_at: log.created_at || now,\n    };\n    const inserted = await tableInsert(TABLES.logs, row);\n    logs.push(inserted.data);\n  }\n  staticData.migratedToTables = true;\n}\n\ntry {\n  const [businesses, services, leads, reviews, logs] = await Promise.all([\n    tableGetAll(TABLES.businesses),\n    tableGetAll(TABLES.services),\n    tableGetAll(TABLES.leads),\n    tableGetAll(TABLES.reviews),\n    tableGetAll(TABLES.logs),\n  ]);\n\n  await migrateFromStaticIfNeeded(businesses, services, leads, reviews, logs);\n\n  async function writeLog(businessId, event, detail, leadId = null, metadata = null) {\n    const entry = {\n      id: uuid(),\n      business_id: businessId,\n      lead_id: leadId || '',\n      event,\n      detail,\n      metadata: metadata ? JSON.stringify(metadata) : '',\n      created_at: now,\n    };\n    const inserted = await tableInsert(TABLES.logs, entry);\n    logs.unshift(inserted.data);\n  }\n\n  function findBusiness(slug) {\n    return businesses.find((b) => b.slug === slug);\n  }\n\n  function findLeadByEmail(businessId, email) {\n    const norm = normalizeEmail(email);\n    return leads.find(\n      (l) => l.business_id === businessId && normalizeEmail(l.email) === norm\n    );\n  }\n\n  function serializeLead(lead) {\n    if (!lead) return lead;\n    return {\n      ...lead,\n      service_id: emptyToNull(lead.service_id),\n      notes: emptyToNull(lead.notes),\n      queued_at: emptyToNull(lead.queued_at),\n      sent_at: emptyToNull(lead.sent_at),\n      opened_at: emptyToNull(lead.opened_at),\n      reviewed_at: emptyToNull(lead.reviewed_at),\n      service_name: services.find((s) => s.id === lead.service_id)?.name,\n    };\n  }\n\n  function serializeBusiness(business) {\n    return {\n      ...business,\n      logo_url: emptyToNull(business.logo_url),\n      owner_email: emptyToNull(business.owner_email),\n    };\n  }\n\n  switch (action) {\n    case 'health':\n      result = { ok: true, storage: 'data-tables' };\n      break;\n\n    case 'business.create': {\n      if (businesses.some((b) => b.slug === params.slug)) throw new Error('Business slug already exists');\n      const business = {\n        id: uuid(),\n        slug: params.slug,\n        name: params.name,\n        place_id: params.place_id,\n        logo_url: '',\n        owner_email: params.owner_email || '',\n        created_at: now,\n      };\n      const inserted = await tableInsert(TABLES.businesses, business);\n      businesses.push(inserted.data);\n      for (const tmpl of defaultServices) {\n        const svc = {\n          id: uuid(),\n          business_id: business.id,\n          name: tmpl.name,\n          slug: slugify(tmpl.name),\n          email_subject: tmpl.subject,\n          email_body: tmpl.body,\n          created_at: now,\n        };\n        const svcInserted = await tableInsert(TABLES.services, svc);\n        services.push(svcInserted.data);\n      }\n      await writeLog(business.id, 'business.created', `Business \"${business.name}\" created`);\n      result = { business: serializeBusiness(inserted.data) };\n      break;\n    }\n\n    case 'business.get': {\n      const business = findBusiness(params.slug);\n      if (!business) throw new Error('Business not found');\n      result = { business: serializeBusiness(business) };\n      break;\n    }\n\n    case 'business.list': {\n      const list = businesses\n        .map(serializeBusiness)\n        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));\n      result = { businesses: list };\n      break;\n    }\n\n    case 'business.update': {\n      const business = findBusiness(params.slug);\n      if (!business) throw new Error('Business not found');\n      const updated = { ...business };\n      if (params.name) updated.name = params.name;\n      if (params.place_id) updated.place_id = params.place_id;\n      await tableUpdate(TABLES.businesses, business.id, updated);\n      Object.assign(business, updated);\n      await writeLog(business.id, 'business.updated', `Business \"${business.name}\" updated`);\n      result = { business: serializeBusiness(updated) };\n      break;\n    }\n\n    case 'service.list': {\n      const business = findBusiness(params.slug);\n      if (!business) throw new Error('Business not found');\n      let list = services.filter((s) => s.business_id === business.id);\n      list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));\n      const paginated = paginateList(list, params.page, params.limit);\n      result = { services: paginated.items, pagination: paginated.pagination };\n      break;\n    }\n\n    case 'service.create': {\n      const business = findBusiness(params.slug);\n      if (!business) throw new Error('Business not found');\n      const service = {\n        id: uuid(),\n        business_id: business.id,\n        name: params.name,\n        slug: slugify(params.name),\n        email_subject: params.email_subject,\n        email_body: params.email_body,\n        created_at: now,\n      };\n      const inserted = await tableInsert(TABLES.services, service);\n      services.push(inserted.data);\n      await writeLog(business.id, 'service.created', `Service \"${service.name}\" created`);\n      result = { service: inserted.data };\n      break;\n    }\n\n    case 'service.update': {\n      const business = findBusiness(params.slug);\n      if (!business) throw new Error('Business not found');\n      const service = services.find((s) => s.id === params.service_id && s.business_id === business.id);\n      if (!service) throw new Error('Service not found');\n      if (params.name) { service.name = params.name; service.slug = slugify(params.name); }\n      if (params.email_subject) service.email_subject = params.email_subject;\n      if (params.email_body) service.email_body = params.email_body;\n      await tableUpdate(TABLES.services, service.id, service);\n      await writeLog(business.id, 'service.updated', `Service \"${service.name}\" updated`);\n      result = { service };\n      break;\n    }\n\n    case 'lead.list': {\n      const business = findBusiness(params.slug);\n      if (!business) throw new Error('Business not found');\n      const allBizLeads = leads.filter((l) => l.business_id === business.id);\n      let list = allBizLeads;\n      if (params.status) list = list.filter((l) => l.status === params.status);\n      list = list.map(serializeLead);\n      list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));\n      const unassigned_total = allBizLeads.filter((l) => !l.service_id).length;\n      const paginated = paginateList(list, params.page, params.limit);\n      result = {\n        leads: paginated.items,\n        pagination: paginated.pagination,\n        unassigned_total,\n      };\n      break;\n    }\n\n    case 'lead.create': {\n      const business = findBusiness(params.slug);\n      if (!business) throw new Error('Business not found');\n      if (findLeadByEmail(business.id, params.email)) throw new Error('A lead with this email already exists');\n      const service = services.find((s) => s.id === params.service_id && s.business_id === business.id);\n      if (!service) throw new Error('Service not found');\n      const lead = {\n        id: uuid(),\n        business_id: business.id,\n        name: params.name,\n        email: params.email,\n        service_id: service.id,\n        status: 'pending',\n        review_token: uuid().replace(/-/g, '') + uuid().replace(/-/g, ''),\n        notes: params.notes || '',\n        queued_at: '',\n        sent_at: '',\n        opened_at: '',\n        reviewed_at: '',\n        created_at: now,\n      };\n      const inserted = await tableInsert(TABLES.leads, lead);\n      const saved = inserted.data || { ...lead, id: lead.id };\n      leads.push(saved);\n      await writeLog(business.id, 'lead.created', `Lead \"${lead.name}\" (${lead.email}) added`, lead.id);\n      result = { lead: serializeLead(saved) };\n      break;\n    }\n\n    case 'lead.import': {\n      const business = findBusiness(params.slug);\n      if (!business) throw new Error('Business not found');\n      const imported = [];\n      let skipped_duplicates = 0;\n      for (const row of params.leads || []) {\n        if (!row.name || !row.email) continue;\n        if (findLeadByEmail(business.id, row.email)) {\n          skipped_duplicates++;\n          continue;\n        }\n        let service = null;\n        if (row.service && String(row.service).trim()) {\n          service = services.find(\n            (s) =>\n              s.business_id === business.id &&\n              s.name.toLowerCase() === String(row.service).trim().toLowerCase()\n          );\n          if (!service) continue;\n        } else if (params.default_service_id) {\n          service = services.find(\n            (s) => s.id === params.default_service_id && s.business_id === business.id\n          );\n        }\n        const lead = {\n          id: uuid(),\n          business_id: business.id,\n          name: row.name,\n          email: row.email,\n          service_id: service ? service.id : '',\n          status: 'pending',\n          review_token: uuid().replace(/-/g, '') + uuid().replace(/-/g, ''),\n          notes: row.notes || '',\n          queued_at: '',\n          sent_at: '',\n          opened_at: '',\n          reviewed_at: '',\n          created_at: now,\n        };\n        const inserted = await tableInsert(TABLES.leads, lead);\n        const saved = inserted.data || { ...lead, id: lead.id };\n        leads.push(saved);\n        imported.push(serializeLead(saved));\n      }\n      await writeLog(business.id, 'lead.imported', `Imported ${imported.length} leads`, null, { skipped_duplicates });\n      result = { imported: imported.length, skipped_duplicates, leads: imported };\n      break;\n    }\n\n    case 'lead.delete': {\n      const business = findBusiness(params.slug);\n      if (!business) throw new Error('Business not found');\n      const deleted = [];\n      for (const leadId of params.lead_ids || []) {\n        const lead = leads.find((l) => l.id === leadId && l.business_id === business.id);\n        if (!lead) continue;\n        await tableDelete(TABLES.leads, lead.id);\n        const idx = leads.findIndex((l) => l.id === lead.id);\n        if (idx >= 0) leads.splice(idx, 1);\n        deleted.push(lead.id);\n        await writeLog(business.id, 'lead.deleted', `Deleted lead \"${lead.name}\" (${lead.email})`, lead.id);\n      }\n      result = { deleted: deleted.length, lead_ids: deleted };\n      break;\n    }\n\n    case 'lead.update': {\n      const business = findBusiness(params.slug);\n      if (!business) throw new Error('Business not found');\n      const lead = leads.find((l) => l.id === params.lead_id && l.business_id === business.id);\n      if (!lead) throw new Error('Lead not found');\n\n      const changes = [];\n      if (params.name != null && String(params.name).trim()) {\n        lead.name = String(params.name).trim();\n        changes.push('name');\n      }\n      if (params.email != null && String(params.email).trim()) {\n        const newEmail = String(params.email).trim();\n        const duplicate = findLeadByEmail(business.id, newEmail);\n        if (duplicate && duplicate.id !== lead.id) {\n          throw new Error('A lead with this email already exists');\n        }\n        lead.email = newEmail;\n        changes.push('email');\n      }\n      if (changes.length === 0) throw new Error('Nothing to update');\n\n      await tableUpdate(TABLES.leads, lead.id, lead);\n      await writeLog(\n        business.id,\n        'lead.updated',\n        `Updated ${changes.join(' and ')} for \"${lead.name}\" (${lead.email})`,\n        lead.id\n      );\n      result = { lead: serializeLead(lead) };\n      break;\n    }\n\n    case 'lead.update_service': {\n      const business = findBusiness(params.slug);\n      if (!business) throw new Error('Business not found');\n      const lead = leads.find((l) => l.id === params.lead_id && l.business_id === business.id);\n      if (!lead) throw new Error('Lead not found');\n      const service = services.find((s) => s.id === params.service_id && s.business_id === business.id);\n      if (!service) throw new Error('Service not found');\n      lead.service_id = service.id;\n      await tableUpdate(TABLES.leads, lead.id, lead);\n      await writeLog(business.id, 'lead.updated', `Assigned service \"${service.name}\" to ${lead.name}`, lead.id);\n      result = { lead: serializeLead(lead) };\n      break;\n    }\n\n    case 'lead.bulk_assign_service': {\n      const business = findBusiness(params.slug);\n      if (!business) throw new Error('Business not found');\n      const service = services.find(\n        (s) => s.id === params.service_id && s.business_id === business.id\n      );\n      if (!service) throw new Error('Service not found');\n\n      let updated = 0;\n\n      if (params.all_unassigned) {\n        updated = await tableBulkUpdateByFilter(\n          TABLES.leads,\n          {\n            type: 'and',\n            filters: [\n              { columnName: 'business_id', condition: 'eq', value: business.id },\n              { columnName: 'service_id', condition: 'eq', value: '' },\n            ],\n          },\n          { service_id: service.id }\n        );\n        for (const lead of leads) {\n          if (lead.business_id === business.id && !lead.service_id) {\n            lead.service_id = service.id;\n          }\n        }\n      } else {\n        const idSet = new Set(params.lead_ids || []);\n        const targets = leads.filter(\n          (l) => l.business_id === business.id && idSet.has(l.id)\n        );\n        for (const lead of targets) {\n          if (lead.service_id === service.id) continue;\n          lead.service_id = service.id;\n          await tableUpdate(TABLES.leads, lead.id, lead);\n          updated++;\n        }\n      }\n\n      if (updated > 0) {\n        await writeLog(\n          business.id,\n          'lead.updated',\n          `Bulk assigned \"${service.name}\" to ${updated} lead(s)`\n        );\n      }\n      result = { updated, service_name: service.name };\n      break;\n    }\n\n    case 'lead.update_status': {\n      const business = findBusiness(params.slug);\n      if (!business) throw new Error('Business not found');\n      const updated = [];\n      const skipped = [];\n      const noResend = ['sent', 'opened', 'reviewed'];\n\n      for (const leadId of params.lead_ids || []) {\n        const lead = leads.find((l) => l.id === leadId && l.business_id === business.id);\n        if (!lead) continue;\n\n        if (params.status === 'queued' && noResend.includes(lead.status)) {\n          skipped.push(leadId);\n          await writeLog(business.id, 'email.skipped', `Skipped ${lead.email} — already ${lead.status}`, lead.id);\n          continue;\n        }\n\n        const service = services.find((s) => s.id === lead.service_id);\n        if (params.status === 'queued' && !service) {\n          skipped.push(leadId);\n          await writeLog(business.id, 'email.skipped', `Skipped ${lead.email} — assign a service first`, lead.id);\n          continue;\n        }\n\n        const oldStatus = lead.status;\n        lead.status = params.status;\n        if (params.status === 'queued') {\n          lead.queued_at = now;\n          const reviewLink = `${APP_URL}/review/${lead.review_token}`;\n          const renderedBody = replaceTemplate(service.email_body, {\n            name: lead.name,\n            service: service.name,\n            review_link: reviewLink,\n          });\n          emailJobs.push({\n            lead_id: lead.id,\n            business_id: business.id,\n            to: lead.email,\n            subject: replaceTemplate(service.email_subject, { name: lead.name, service: service.name, review_link: reviewLink }),\n            body: markdownToHtml(renderedBody),\n            body_text: renderedBody,\n            is_html: true,\n            lead_name: lead.name,\n            service_name: service.name,\n          });\n        }\n        await tableUpdate(TABLES.leads, lead.id, lead);\n        await writeLog(business.id, 'status.changed', `${lead.name}: ${oldStatus} → ${params.status}`, lead.id, { old_status: oldStatus, new_status: params.status });\n        updated.push(serializeLead(lead));\n      }\n      result = { updated, skipped };\n      break;\n    }\n\n    case 'lead.email_result': {\n      const lead = leads.find((l) => l.id === params.lead_id);\n      if (!lead) throw new Error('Lead not found');\n      const business = businesses.find((b) => b.id === lead.business_id);\n      if (!business) throw new Error('Business not found');\n      if (params.success) {\n        lead.status = 'sent';\n        lead.sent_at = now;\n      } else {\n        lead.status = 'failed';\n        lead.queued_at = '';\n      }\n      await tableUpdate(TABLES.leads, lead.id, lead);\n      await writeLog(\n        business.id,\n        params.success ? 'email.sent' : 'email.failed',\n        params.success ? `Email sent to ${lead.email}` : `Email failed for ${lead.email}`,\n        lead.id,\n        params.success ? null : { error: params.error || null }\n      );\n      result = { ok: true, lead: serializeLead(lead) };\n      break;\n    }\n\n    case 'review.get_lead': {\n      const lead = leads.find((l) => l.review_token === params.token);\n      if (!lead) throw new Error('Invalid review link');\n      const business = businesses.find((b) => b.id === lead.business_id);\n      const service = services.find((s) => s.id === lead.service_id);\n      if (!service) throw new Error('Service not found for this lead');\n      const already_reviewed = lead.status === 'reviewed';\n      if (lead.status === 'sent') {\n        lead.status = 'opened';\n        lead.opened_at = now;\n        await tableUpdate(TABLES.leads, lead.id, lead);\n        await writeLog(business.id, 'review.opened', `${lead.name} opened review link`, lead.id);\n      }\n      const review = reviews.find((r) => r.lead_id === lead.id) || null;\n      const eligible = review && Number(review.rating) >= 4 && !review.redirected_to_gmb;\n      result = {\n        lead: serializeLead(lead),\n        business: serializeBusiness(business),\n        service,\n        already_reviewed,\n        review,\n        eligible_for_gmb: !!eligible,\n        gmb_url: eligible ? buildGmbReviewUrl(business.place_id) : undefined,\n      };\n      break;\n    }\n\n    case 'review.submit': {\n      const lead = leads.find((l) => l.review_token === params.token);\n      if (!lead) throw new Error('Invalid review link');\n      if (lead.status === 'reviewed') throw new Error('Review already submitted');\n      const business = businesses.find((b) => b.id === lead.business_id);\n      const rating = Number(params.rating);\n      if (!rating || rating < 1 || rating > 5) throw new Error('Invalid rating');\n\n      const eligible = rating >= 4;\n      const review = {\n        id: uuid(),\n        lead_id: lead.id,\n        business_id: business.id,\n        rating,\n        comment: params.comment || '',\n        redirected_to_gmb: false,\n        created_at: now,\n      };\n      await tableInsert(TABLES.reviews, review);\n      lead.status = 'reviewed';\n      lead.reviewed_at = now;\n      await tableUpdate(TABLES.leads, lead.id, lead);\n      await writeLog(business.id, 'review.submitted', `${lead.name} gave ${rating} stars`, lead.id, { rating, eligible_for_gmb: eligible });\n\n      result = {\n        success: true,\n        eligible_for_gmb: eligible,\n        gmb_url: eligible ? buildGmbReviewUrl(business.place_id) : undefined,\n      };\n      break;\n    }\n\n    case 'review.mark_gmb_redirect': {\n      const lead = leads.find((l) => l.review_token === params.token);\n      if (!lead) throw new Error('Invalid review link');\n      const business = businesses.find((b) => b.id === lead.business_id);\n      const review = reviews.find((r) => r.lead_id === lead.id);\n      if (!review) throw new Error('Review not found');\n      if (Number(review.rating) < 4) throw new Error('Review not eligible for Google redirect');\n\n      const gmbUrl = buildGmbReviewUrl(business.place_id);\n      if (!review.redirected_to_gmb) {\n        review.redirected_to_gmb = true;\n        await tableUpdate(TABLES.reviews, review.id, review);\n        await writeLog(business.id, 'review.gmb_redirect', `${lead.name} opened Google review link`, lead.id);\n      }\n\n      result = { ok: true, redirected_to_gmb: true, gmb_url: gmbUrl };\n      break;\n    }\n\n    case 'log.list': {\n      const business = findBusiness(params.slug);\n      if (!business) throw new Error('Business not found');\n      let list = logs.filter((l) => l.business_id === business.id);\n      if (params.event) list = list.filter((l) => l.event === params.event);\n      list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));\n      const paginated = paginateList(list, params.page, params.limit);\n      result = { logs: paginated.items, pagination: paginated.pagination };\n      break;\n    }\n\n    case 'stats.get': {\n      const business = findBusiness(params.slug);\n      if (!business) throw new Error('Business not found');\n      const bizLeads = leads.filter((l) => l.business_id === business.id);\n      const bizReviews = reviews.filter((r) => r.business_id === business.id);\n      const avg = bizReviews.length\n        ? bizReviews.reduce((s, r) => s + Number(r.rating), 0) / bizReviews.length\n        : null;\n      result = {\n        stats: {\n          total_leads: bizLeads.length,\n          pending: bizLeads.filter((l) => l.status === 'pending').length,\n          queued: bizLeads.filter((l) => l.status === 'queued').length,\n          sent: bizLeads.filter((l) => l.status === 'sent').length,\n          opened: bizLeads.filter((l) => l.status === 'opened').length,\n          reviewed: bizLeads.filter((l) => l.status === 'reviewed').length,\n          failed: bizLeads.filter((l) => l.status === 'failed').length,\n          avg_rating: avg,\n        },\n      };\n      break;\n    }\n\n    default:\n      throw new Error(`Unknown action: ${action}`);\n  }\n} catch (err) {\n  return [{ json: { error: err.message } }];\n}\n\nconst output = { ...result };\nif (emailJobs.length > 0) output._emailJobs = emailJobs;\n\nreturn [{ json: output }];\n"
+      },
+      "id": "api-handler",
+      "name": "API Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $('API Handler').first().json;\nconst { _emailJobs, ...response } = data;\nreturn [{ json: response }];"
+      },
+      "id": "prepare-response",
+      "name": "Prepare Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": "={{ $json.error ? 400 : 200 }}"
+        }
+      },
+      "id": "respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "email-jobs",
+              "leftValue": "={{ $json._emailJobs?.length || 0 }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-emails",
+      "name": "Has Email Jobs?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        440,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const jobs = $('API Handler').first().json._emailJobs || [];\n// Stagger sends so Gmail is not hammered (5s between each email in a batch)\nconst SECONDS_BETWEEN = 5;\nreturn jobs.map((j, i) => ({\n  json: {\n    ...j,\n    _send_index: i,\n    _send_delay_seconds: i * SECONDS_BETWEEN,\n  },\n}));"
+      },
+      "id": "split-emails",
+      "name": "Split Email Jobs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $env.GMB_WF_SEND_EMAIL_ID }}",
+        "mode": "each"
+      },
+      "id": "exec-send-email",
+      "name": "Send Review Email WF",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        880,
+        120
+      ],
+      "onError": "continueErrorOutput"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "API Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API Handler": {
+      "main": [
+        [
+          {
+            "node": "Prepare Response",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Has Email Jobs?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Email Jobs?": {
+      "main": [
+        [
+          {
+            "node": "Split Email Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Split Email Jobs": {
+      "main": [
+        [
+          {
+            "node": "Send Review Email WF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "tables": [
+    {
+      "name": "gmb_businesses",
+      "columns": [
+        { "name": "id", "type": "string" },
+        { "name": "slug", "type": "string" },
+        { "name": "name", "type": "string" },
+        { "name": "place_id", "type": "string" },
+        { "name": "logo_url", "type": "string" },
+        { "name": "owner_email", "type": "string" },
+        { "name": "created_at", "type": "string" }
+      ]
+    },
+    {
+      "name": "gmb_services",
+      "columns": [
+        { "name": "id", "type": "string" },
+        { "name": "business_id", "type": "string" },
+        { "name": "name", "type": "string" },
+        { "name": "slug", "type": "string" },
+        { "name": "email_subject", "type": "string" },
+        { "name": "email_body", "type": "string" },
+        { "name": "created_at", "type": "string" }
+      ]
+    },
+    {
+      "name": "gmb_leads",
+      "columns": [
+        { "name": "id", "type": "string" },
+        { "name": "business_id", "type": "string" },
+        { "name": "name", "type": "string" },
+        { "name": "email", "type": "string" },
+        { "name": "service_id", "type": "string" },
+        { "name": "status", "type": "string" },
+        { "name": "review_token", "type": "string" },
+        { "name": "notes", "type": "string" },
+        { "name": "queued_at", "type": "string" },
+        { "name": "sent_at", "type": "string" },
+        { "name": "opened_at", "type": "string" },
+        { "name": "reviewed_at", "type": "string" },
+        { "name": "created_at", "type": "string" }
+      ]
+    },
+    {
+      "name": "gmb_reviews",
+      "columns": [
+        { "name": "id", "type": "string" },
+        { "name": "lead_id", "type": "string" },
+        { "name": "business_id", "type": "string" },
+        { "name": "rating", "type": "number" },
+        { "name": "comment", "type": "string" },
+        { "name": "redirected_to_gmb", "type": "boolean" },
+        { "name": "created_at", "type": "string" }
+      ]
+    },
+    {
+      "name": "gmb_activity_logs",
+      "columns": [
+        { "name": "id", "type": "string" },
+        { "name": "business_id", "type": "string" },
+        { "name": "lead_id", "type": "string" },
+        { "name": "event", "type": "string" },
+        { "name": "detail", "type": "string" },
+        { "name": "metadata", "type": "string" },
+        { "name": "created_at", "type": "string" }
+      ]
+    }
+  ]
+}

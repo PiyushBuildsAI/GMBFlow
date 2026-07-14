@@ -1,0 +1,122 @@
+{
+  "name": "GMB 01 — API Gateway",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "gmb-api",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "gmb-api"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Run: bun n8n/scripts/build-workflows.ts to embed api-handler-datatables.js"
+      },
+      "id": "api-handler",
+      "name": "API Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $('API Handler').first().json;\nconst { _emailJobs, ...response } = data;\nreturn [{ json: response }];"
+      },
+      "id": "prepare-response",
+      "name": "Prepare Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, -120]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": "={{ $json.error ? 400 : 200 }}"
+        }
+      },
+      "id": "respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [660, -120]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "email-jobs",
+              "leftValue": "={{ $json._emailJobs?.length || 0 }}",
+              "rightValue": 0,
+              "operator": { "type": "number", "operation": "gt" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-emails",
+      "name": "Has Email Jobs?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [440, 120]
+    },
+    {
+      "parameters": {
+        "jsCode": "const jobs = $('API Handler').first().json._emailJobs || [];\n// Stagger sends so Gmail is not hammered (5s between each email in a batch)\nconst SECONDS_BETWEEN = 5;\nreturn jobs.map((j, i) => ({\n  json: {\n    ...j,\n    _send_index: i,\n    _send_delay_seconds: i * SECONDS_BETWEEN,\n  },\n}));"
+      },
+      "id": "split-emails",
+      "name": "Split Email Jobs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 120]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $env.GMB_WF_SEND_EMAIL_ID }}",
+        "mode": "each"
+      },
+      "id": "exec-send-email",
+      "name": "Send Review Email WF",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [880, 120],
+      "onError": "continueErrorOutput"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "API Handler", "type": "main", "index": 0 }]]
+    },
+    "API Handler": {
+      "main": [
+        [
+          { "node": "Prepare Response", "type": "main", "index": 0 },
+          { "node": "Has Email Jobs?", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Prepare Response": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    },
+    "Has Email Jobs?": {
+      "main": [
+        [{ "node": "Split Email Jobs", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Split Email Jobs": {
+      "main": [[{ "node": "Send Review Email WF", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" }
+}
